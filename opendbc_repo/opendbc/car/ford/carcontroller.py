@@ -5,7 +5,7 @@ from numpy import clip, interp
 from collections import deque
 from common.filter_simple import FirstOrderFilter
 from opendbc.can.packer import CANPacker
-from opendbc.car import ACCELERATION_DUE_TO_GRAVITY, Bus, DT_CTRL, apply_std_steer_angle_limits, structs
+from opendbc.car import ACCELERATION_DUE_TO_GRAVITY, Bus, DT_CTRL, apply_std_steer_angle_limits, apply_hysteresis, structs
 from opendbc.car.vehicle_model import VehicleModel
 from opendbc.car.ford import fordcan
 from opendbc.car.ford.values import CarControllerParams, FordFlags, CAR
@@ -37,6 +37,21 @@ CONTROL_N = 17
 IDX_N = 33
 T_IDXS = [index_function(idx, max_val=10.0) for idx in range(IDX_N)]
 
+
+def anti_overshoot(apply_curvature, apply_curvature_last, v_ego):
+  diff = 0.1
+  tau = 5  # 5s smooths over the overshoot
+  dt = DT_CTRL * CarControllerParams.STEER_STEP
+  alpha = 1 - np.exp(-dt / tau)
+
+  lataccel = apply_curvature * (v_ego ** 2)
+  last_lataccel = apply_curvature_last * (v_ego ** 2)
+  last_lataccel = apply_hysteresis(lataccel, last_lataccel, diff)
+  last_lataccel = alpha * lataccel + (1 - alpha) * last_lataccel
+
+  output_curvature = last_lataccel / (max(v_ego, 1) ** 2)
+
+  return float(np.interp(v_ego, [5, 10], [apply_curvature, output_curvature]))
 
 def apply_ford_curvature_limits(apply_curvature, apply_curvature_last, current_curvature, v_ego_raw, steering_angle, lat_active, CP):
   # No blending at low speed due to lack of torque wind-up and inaccurate current curvature
@@ -106,6 +121,8 @@ class CarController(CarControllerBase):
     self.steer_warning = False # warning for steering limits exceeded
     self.steer_warning_count = 0 # count how many cycles the warning has existed
     self.steering_limited = 0 # count how many cycles the steering was limited
+    self.disable_BP_lat_UI = False # updated from UI: disable BP lateral control
+    self.anti_overshoot_curvature_last = 0.0 # initialize anti_overshoot_curvature_last
 
     # Curvature variables
     self.curvature_lookup_time = 0.42 #from lagd
@@ -614,6 +631,26 @@ class CarController(CarControllerBase):
           reset_steering = 1
         else:
           reset_steering = 0
+        
+        if self.disable_BP_lat_UI:
+          reset_steering = 0
+          path_offset = 0
+          path_angle = 0
+          desired_curvature_rate = 0
+          ramp_type = 1
+
+          self.anti_overshoot_curvature_last = anti_overshoot(desired_curvature, self.anti_overshoot_curvature_last, CS.out.vEgoRaw)
+          apply_curvature = self.anti_overshoot_curvature_last
+
+          # apply curvature limits
+          apply_curvature = apply_ford_curvature_limits(self.anti_overshoot_curvature_last,
+                                                                self.apply_curvature_last,
+                                                                current_curvature,
+                                                                CS.out.vEgoRaw,
+                                                                0,
+                                                                CC.latActive,
+                                                                self.CP)
+
 
         # reset steering by setting all values to 0 and ramp_type to immediate
         if reset_steering == 1:
