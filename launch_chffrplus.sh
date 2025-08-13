@@ -83,8 +83,14 @@ function launch {
     export ATHENA_HOST=wss://athena.konik.ai
   fi
 
-   # custom portal for Uncle Tony's C3X devices
+   # custom portal for Uncle Tony's C3X (Comma ID)devices
   if grep -q -E "3b1f3f2a42d70b76" /data/params/d/DongleId; then
+    export API_HOST=https://api.konik.ai
+    export ATHENA_HOST=wss://athena.konik.ai
+  fi
+
+  # custom portal for Uncle Tony's C3X (Konik ID)devices
+  if grep -q -E "78732aa1f2ca0217" /data/params/d/DongleId; then
     export API_HOST=https://api.konik.ai
     export ATHENA_HOST=wss://athena.konik.ai
   fi
