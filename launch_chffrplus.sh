@@ -77,8 +77,14 @@ function launch {
     agnos_init
   fi
 
-  # custom portal for non-comma devices
+  # custom portal for ajzride's Konik devices
   if grep -q -E "160fab5f43d9e5c1" /data/params/d/DongleId; then
+    export API_HOST=https://api.konik.ai
+    export ATHENA_HOST=wss://athena.konik.ai
+  fi
+
+   # custom portal for Uncle Tony's C3X devices
+  if grep -q -E "3b1f3f2a42d70b76" /data/params/d/DongleId; then
     export API_HOST=https://api.konik.ai
     export ATHENA_HOST=wss://athena.konik.ai
   fi
